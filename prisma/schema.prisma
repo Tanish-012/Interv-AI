@@ -7,7 +7,7 @@ datasource db {
 
 generator client {
   provider   = "prisma-client-js"
-  engineType = "binary"
+  engineType = "client"
 }
 
 model UserResume {
@@ -17,4 +17,14 @@ model UserResume {
   extractedText String   @db.Text
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+}
+
+model InterviewSession {
+  id         String   @id @default(cuid())
+  userId     String   // Maps to your Clerk user ID
+  position   String   // e.g., "Software Engineer Intern"
+  questions  Json     // Stores the 10 questions as a structured JSON array
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
 }

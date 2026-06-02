@@ -6,7 +6,7 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  serverExternalPackages: ['pdf-parse', '@prisma/client', '.prisma/client'],
+  serverExternalPackages: ['pdf-parse', '@prisma/client', '.prisma/client', 'pg'],
 }
 
 export default nextConfig

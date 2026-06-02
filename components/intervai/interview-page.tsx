@@ -14,11 +14,14 @@ import {
   ChevronLeft,
   Code,
   MessageSquare,
-  Volume2
+  Volume2,
+  Loader2
 } from "lucide-react";
+import { getInterviewSessionAction } from "@/app/actions/generate-questions";
 
 interface InterviewPageProps {
   onNavigate: (page: string) => void;
+  sessionId?: string | null;
 }
 
 const questions = [
@@ -29,7 +32,7 @@ const questions = [
   "Describe a time when you had to make a difficult technical decision.",
 ];
 
-export function InterviewPage({ onNavigate }: InterviewPageProps) {
+export function InterviewPage({ onNavigate, sessionId }: InterviewPageProps) {
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOn, setIsVideoOn] = useState(true);
   const [currentQuestion, setCurrentQuestion] = useState(0);
@@ -37,6 +40,31 @@ export function InterviewPage({ onNavigate }: InterviewPageProps) {
   const [audioLevel, setAudioLevel] = useState([3, 5, 8, 6, 4, 7, 5, 3, 6, 8, 5, 4]);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [mode, setMode] = useState<"verbal" | "code">("verbal");
+
+  const [activeQuestions, setActiveQuestions] = useState<string[]>(questions);
+  const [targetRole, setTargetRole] = useState("Software Engineer Intern");
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Fetch custom questions from database session if sessionId is provided
+  useEffect(() => {
+    if (!sessionId) return;
+
+    const fetchSessionData = async () => {
+      setIsLoading(true);
+      const result = await getInterviewSessionAction(sessionId);
+      if (result.success && result.questions && result.questions.length > 0) {
+        setActiveQuestions(result.questions);
+        if (result.position) {
+          setTargetRole(result.position);
+        }
+      } else {
+        console.error("Failed to load custom AI questions:", result.error);
+      }
+      setIsLoading(false);
+    };
+
+    fetchSessionData();
+  }, [sessionId]);
 
   // Simulate audio visualizer
   useEffect(() => {
@@ -65,7 +93,7 @@ export function InterviewPage({ onNavigate }: InterviewPageProps) {
   };
 
   const handleSubmit = () => {
-    if (currentQuestion < questions.length - 1) {
+    if (currentQuestion < activeQuestions.length - 1) {
       setCurrentQuestion((prev) => prev + 1);
       setResponse("");
     } else {
@@ -108,24 +136,33 @@ export function InterviewPage({ onNavigate }: InterviewPageProps) {
           <div className="flex-1 bg-white/[0.02] backdrop-blur-sm border border-white/[0.08] rounded-2xl overflow-hidden flex flex-col">
             {/* Avatar */}
             <div className="flex-1 flex items-center justify-center p-8 relative">
-              <div className="absolute inset-0 bg-gradient-to-b from-emerald-500/5 to-transparent" />
-              <div className="relative">
-                <div className="w-32 h-32 sm:w-40 sm:h-40 rounded-full bg-gradient-to-br from-emerald-500/20 to-indigo-500/20 border border-white/[0.08] flex items-center justify-center">
-                  <Bot className="w-16 h-16 sm:w-20 sm:h-20 text-emerald-400" />
+              {isLoading ? (
+                <div className="flex flex-col items-center justify-center gap-3">
+                  <Loader2 className="w-12 h-12 text-emerald-400 animate-spin" />
+                  <p className="text-sm font-mono text-zinc-400">Loading custom AI questions...</p>
                 </div>
-                {/* Audio Visualizer Ring */}
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="flex items-end gap-1 h-8 sm:h-10">
-                    {audioLevel.map((level, index) => (
-                      <div
-                        key={index}
-                        className="w-1 bg-emerald-400/60 rounded-full transition-all duration-150"
-                        style={{ height: `${level * 8}%` }}
-                      />
-                    ))}
+              ) : (
+                <>
+                  <div className="absolute inset-0 bg-gradient-to-b from-emerald-500/5 to-transparent" />
+                  <div className="relative">
+                    <div className="w-32 h-32 sm:w-40 sm:h-40 rounded-full bg-gradient-to-br from-emerald-500/20 to-indigo-500/20 border border-white/[0.08] flex items-center justify-center">
+                      <Bot className="w-16 h-16 sm:w-20 sm:h-20 text-emerald-400" />
+                    </div>
+                    {/* Audio Visualizer Ring */}
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="flex items-end gap-1 h-8 sm:h-10">
+                        {audioLevel.map((level, index) => (
+                          <div
+                            key={index}
+                            className="w-1 bg-emerald-400/60 rounded-full transition-all duration-150"
+                            style={{ height: `${level * 8}%` }}
+                          />
+                        ))}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
+                </>
+              )}
             </div>
 
             {/* Question Display */}
@@ -133,11 +170,11 @@ export function InterviewPage({ onNavigate }: InterviewPageProps) {
               <div className="flex items-center gap-2 mb-3">
                 <Volume2 className="w-4 h-4 text-emerald-400" />
                 <span className="text-xs text-zinc-500 uppercase tracking-wider">
-                  Question {currentQuestion + 1} of {questions.length}
+                  Question {currentQuestion + 1} of {activeQuestions.length}
                 </span>
               </div>
               <div className="bg-zinc-900/80 border border-white/[0.05] rounded-xl p-4 font-mono">
-                <p className="text-white text-sm sm:text-base leading-relaxed" dangerouslySetInnerHTML={{ __html: questions[currentQuestion] }} />
+                <p className="text-white text-sm sm:text-base leading-relaxed" dangerouslySetInnerHTML={{ __html: activeQuestions[currentQuestion] }} />
               </div>
             </div>
           </div>

@@ -24,6 +24,7 @@ import {
 
 interface DashboardPageProps {
   onNavigate: (page: string) => void;
+  onStartInterview?: (sessionId: string) => void;
 }
 
 const pastInterviews = [
@@ -39,7 +40,7 @@ const recommendations = [
   { title: "Coding: Dynamic Programming", duration: "60 min", difficulty: "Hard" },
 ];
 
-export function DashboardPage({ onNavigate }: DashboardPageProps) {
+export function DashboardPage({ onNavigate, onStartInterview }: DashboardPageProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { user } = useUser();
@@ -246,7 +247,7 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
           </div>
 
           {/* AI Resume Upload Section */}
-          <ResumeUpload />
+          <ResumeUpload onStartInterview={onStartInterview} />
 
           {/* Mobile New Interview Button */}
           <button

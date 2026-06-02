@@ -1,16 +1,26 @@
 "use client";
 
 import { useState, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { UploadCloud, FileText, CheckCircle, AlertCircle, Loader2, ChevronDown, ChevronUp } from "lucide-react";
+import { generateQuestionsAction } from "@/app/actions/generate-questions";
 
-export function ResumeUpload() {
+interface ResumeUploadProps {
+  onStartInterview?: (sessionId: string) => void;
+}
+
+export function ResumeUpload({ onStartInterview }: ResumeUploadProps) {
+  const router = useRouter();
   const [dragActive, setDragActive] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState<"idle" | "uploading" | "parsing" | "success" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState("");
+  const [resumeId, setResumeId] = useState<string | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [position, setPosition] = useState("Software Engineer Intern");
   const [extractedPreview, setExtractedPreview] = useState("");
   const [showPreview, setShowPreview] = useState(false);
-  
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDrag = (e: React.DragEvent) => {
@@ -60,7 +70,7 @@ export function ResumeUpload() {
         // Safely extract the response as text string instead of parsing JSON directly
         const errorText = await response.text();
         setStatus("error");
-        
+
         let friendlyMessage = "";
         if (contentType.includes("application/json")) {
           try {
@@ -92,12 +102,28 @@ export function ResumeUpload() {
 
       setStatus("success");
       setExtractedPreview(result.data?.preview || "");
+      setResumeId(result.data?.id || null);
     } catch (error: any) {
       if (timer) {
         clearTimeout(timer);
       }
       setStatus("error");
       setErrorMessage(error.message || "An unexpected error occurred during upload.");
+    }
+  };
+
+  const handleStartInterview = async (uploadedResumeId: string) => {
+    setIsGenerating(true);
+    const result = await generateQuestionsAction(uploadedResumeId, position);
+    if (result.success && result.sessionId) {
+      if (onStartInterview) {
+        onStartInterview(result.sessionId);
+      } else {
+        router.push(`/interview/${result.sessionId}`);
+      }
+    } else {
+      alert(`Error: ${result.error || "Failed to start interview"}`);
+      setIsGenerating(false);
     }
   };
 
@@ -128,6 +154,8 @@ export function ResumeUpload() {
     setErrorMessage("");
     setExtractedPreview("");
     setShowPreview(false);
+    setResumeId(null);
+    setIsGenerating(false);
   };
 
   return (
@@ -149,11 +177,10 @@ export function ResumeUpload() {
           onDragLeave={handleDrag}
           onDrop={handleDrop}
           onClick={triggerFileInput}
-          className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-3 ${
-            dragActive
+          className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-3 ${dragActive
               ? "border-emerald-500 bg-emerald-500/5 shadow-[0_0_30px_rgba(16,185,129,0.1)]"
               : "border-white/[0.08] hover:border-white/20 hover:bg-white/[0.01]"
-          }`}
+            }`}
         >
           <input
             ref={fileInputRef}
@@ -188,13 +215,12 @@ export function ResumeUpload() {
             <p className="text-xs text-zinc-500">
               {status === "uploading" ? "Transferring document securely..." : "Parsing file using pdf-parse..."}
             </p>
-            
+
             {/* Progress Bar */}
             <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden mt-3">
-              <div 
-                className={`h-full bg-gradient-to-r from-emerald-500 to-indigo-500 rounded-full transition-all duration-700 ${
-                  status === "uploading" ? "w-1/3 animate-pulse" : "w-4/5"
-                }`}
+              <div
+                className={`h-full bg-gradient-to-r from-emerald-500 to-indigo-500 rounded-full transition-all duration-700 ${status === "uploading" ? "w-1/3 animate-pulse" : "w-4/5"
+                  }`}
               />
             </div>
           </div>
@@ -219,6 +245,34 @@ export function ResumeUpload() {
               Upload New
             </button>
           </div>
+
+          {/* Target Position Input */}
+          <div className="space-y-1.5 border-t border-b border-white/[0.05] py-4 my-1">
+            <label className="text-xs font-mono font-medium text-zinc-400">Target Position / Job Role</label>
+            <input
+              type="text"
+              value={position}
+              onChange={(e) => setPosition(e.target.value)}
+              placeholder="e.g., Software Engineer Intern, Data Scientist"
+              className="w-full bg-black/40 border border-white/[0.08] hover:border-white/20 focus:border-emerald-500 rounded-lg px-3.5 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-emerald-500/30 transition-all font-mono"
+            />
+          </div>
+
+          {/* Action button to generate questions and start active session */}
+          <button
+            onClick={() => handleStartInterview(resumeId || "")}
+            disabled={isGenerating || !resumeId}
+            className="w-full py-3 px-4 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-semibold rounded-lg text-sm transition-all duration-300 shadow-[0_0_20px_rgba(16,185,129,0.15)] hover:shadow-[0_0_25px_rgba(16,185,129,0.35)] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer font-mono"
+          >
+            {isGenerating ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin text-emerald-300" />
+                <span>Generating custom questions...</span>
+              </>
+            ) : (
+              <span>Start Custom AI Interview</span>
+            )}
+          </button>
 
           {/* Parsed Text Preview collapsible */}
           <div className="border border-white/[0.05] rounded-lg bg-black/40 overflow-hidden">

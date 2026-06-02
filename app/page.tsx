@@ -12,6 +12,7 @@ type Page = "landing" | "login" | "dashboard" | "interview" | "feedback";
 
 export default function Home() {
   const [currentPage, setCurrentPage] = useState<Page>("landing");
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const { isSignedIn, isLoaded } = useAuth();
 
   // Sync route with Clerk authentication status
@@ -28,12 +29,21 @@ export default function Home() {
     setCurrentPage(page as Page);
   };
 
+  const handleStartInterviewSession = (sessionId: string) => {
+    setActiveSessionId(sessionId);
+    setCurrentPage("interview");
+  };
+
   return (
     <div className="min-h-screen bg-zinc-950">
       {currentPage === "landing" && <LandingPage onNavigate={handleNavigate} />}
       {currentPage === "login" && <LoginPage onNavigate={handleNavigate} />}
-      {currentPage === "dashboard" && <DashboardPage onNavigate={handleNavigate} />}
-      {currentPage === "interview" && <InterviewPage onNavigate={handleNavigate} />}
+      {currentPage === "dashboard" && (
+        <DashboardPage onNavigate={handleNavigate} onStartInterview={handleStartInterviewSession} />
+      )}
+      {currentPage === "interview" && (
+        <InterviewPage onNavigate={handleNavigate} sessionId={activeSessionId} />
+      )}
       {currentPage === "feedback" && <FeedbackPage onNavigate={handleNavigate} />}
     </div>
   );
