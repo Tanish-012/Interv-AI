@@ -1,0 +1,27 @@
+<svg width="180" height="180" viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="brand-grad" x1="0" y1="0" x2="180" y2="180" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#10B981" />
+      <stop offset="100%" stop-color="#6366F1" />
+    </linearGradient>
+    <clipPath id="clip">
+      <rect width="180" height="180" rx="40" fill="white" />
+    </clipPath>
+  </defs>
+  <g clip-path="url(#clip)">
+    <!-- Dark/Premium background for both themes for a wow factor -->
+    <rect width="180" height="180" fill="#09090b" />
+    <!-- Subtle gradient background radial glow -->
+    <circle cx="90" cy="90" r="100" fill="url(#brand-grad)" opacity="0.15" />
+    
+    <!-- Central Icon: Elegant Sparkle/Brain/Chat shape -->
+    <g transform="translate(45, 45) scale(1.5)">
+      <!-- Main Sparkle shape -->
+      <path d="M30 4C30 4 32 18 42 22C32 26 30 40 30 40C30 40 28 26 18 22C28 18 30 4 30 4Z" fill="url(#brand-grad)" />
+      <!-- Secondary smaller sparkle -->
+      <path d="M48 32C48 32 49 37 53 39C49 41 48 46 48 46C48 46 47 41 43 39C47 37 48 32 48 32Z" fill="#34D399" />
+      <!-- Accent dot -->
+      <circle cx="16" cy="14" r="2.5" fill="#818CF8" />
+    </g>
+  </g>
+</svg>
