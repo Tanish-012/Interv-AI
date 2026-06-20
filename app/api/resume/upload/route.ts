@@ -31,9 +31,6 @@ export async function POST(req: Request) {
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // Helper: dynamically import the internal CJS entrypoint of pdf-parse v1.
-    // Importing the sub-path directly bypasses Turbopack's ESM wrapper so we
-    // always get the raw callable function, not a wrapped module object.
     async function pdfServerParse(pdfBuffer: Buffer): Promise<string> {
       const pdfParseModule = await import("pdf-parse/lib/pdf-parse.js");
 
@@ -42,17 +39,13 @@ export async function POST(req: Request) {
         (pdfParseModule as any);
 
       if (typeof pdfParse !== "function") {
-        console.error("pdf-parse module shape:", pdfParseModule);
+        console.error("Invalid pdf-parse module shape:", pdfParseModule);
         throw new Error("PDF parser failed to load correctly");
       }
 
       const pdfData = await pdfParse(pdfBuffer);
 
-      if (!pdfData?.text) {
-        throw new Error("No text could be extracted from this PDF");
-      }
-
-      return pdfData.text;
+      return pdfData?.text || "";
     }
 
     // 4. Extract text with a 10s timeout guard
