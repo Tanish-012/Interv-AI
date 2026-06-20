@@ -1,6 +1,7 @@
 "use client";
 
-import { ArrowRight, Zap, Users, FileText, ChevronRight, Sparkles, Brain, Target } from "lucide-react";
+import { useState } from "react";
+import { ArrowRight, Zap, Users, FileText, ChevronRight, Sparkles, Brain, Target, X } from "lucide-react";
 import { SignInButton, SignUpButton } from "@clerk/nextjs";
 
 interface LandingPageProps {
@@ -8,6 +9,7 @@ interface LandingPageProps {
 }
 
 export function LandingPage({ onNavigate }: LandingPageProps) {
+  const [showDemoBanner, setShowDemoBanner] = useState(false);
   return (
     <div className="min-h-screen bg-zinc-950">
       {/* Navigation */}
@@ -70,6 +72,20 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
             detailed analytics, and recruiter-ready performance reports.
           </p>
 
+          {/* Demo Coming Soon Banner */}
+          {showDemoBanner && (
+            <div className="flex items-center justify-between gap-4 px-5 py-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-sm text-indigo-300 mb-4 animate-in fade-in slide-in-from-top-2 duration-300">
+              <span>🎬 Demo video is coming soon — stay tuned!</span>
+              <button
+                onClick={() => setShowDemoBanner(false)}
+                className="text-indigo-400 hover:text-white transition-colors cursor-pointer shrink-0"
+                aria-label="Dismiss"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <SignUpButton mode="modal">
               <button
@@ -79,7 +95,10 @@ export function LandingPage({ onNavigate }: LandingPageProps) {
                 <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
               </button>
             </SignUpButton>
-            <button className="px-8 py-4 text-zinc-300 hover:text-white font-medium rounded-xl border border-white/[0.08] hover:border-white/20 transition-all flex items-center gap-2 bg-white/[0.02] hover:bg-white/[0.04]">
+            <button
+              onClick={() => setShowDemoBanner(true)}
+              className="px-8 py-4 text-zinc-300 hover:text-white font-medium rounded-xl border border-white/[0.08] hover:border-white/20 transition-all flex items-center gap-2 bg-white/[0.02] hover:bg-white/[0.04] cursor-pointer"
+            >
               Watch Demo
               <ChevronRight className="w-4 h-4" />
             </button>

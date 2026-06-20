@@ -1,51 +1,48 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import {
-  Mic,
-  MicOff,
-  Video,
-  VideoOff,
-  PhoneOff,
-  Send,
-  Bot,
-  Sparkles,
-  Clock,
-  ChevronLeft,
-  Code,
-  MessageSquare,
-  Volume2,
-  Loader2
-} from "lucide-react";
-import { getInterviewSessionAction } from "@/app/actions/generate-questions";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { Clock, ChevronLeft, Loader2, Sparkles, Send, CheckCircle } from "lucide-react";
+import { getInterviewSessionAction, saveInterviewAnswersAction } from "@/app/actions/generate-questions";
+import { Progress } from "@/components/ui/progress";
 
 interface InterviewPageProps {
   onNavigate: (page: string) => void;
   sessionId?: string | null;
 }
 
-const questions = [
-  "Tell me about a challenging technical problem you&apos;ve solved recently.",
+const defaultQuestions = [
+  "Tell me about a challenging technical problem you've solved recently.",
   "How would you design a scalable real-time notification system?",
   "Explain the concept of closure in JavaScript with examples.",
-  "What&apos;s your approach to debugging complex issues in production?",
+  "What's your approach to debugging complex issues in production?",
   "Describe a time when you had to make a difficult technical decision.",
 ];
 
 export function InterviewPage({ onNavigate, sessionId }: InterviewPageProps) {
-  const [isMuted, setIsMuted] = useState(false);
-  const [isVideoOn, setIsVideoOn] = useState(true);
   const [currentQuestion, setCurrentQuestion] = useState(0);
-  const [response, setResponse] = useState("");
-  const [audioLevel, setAudioLevel] = useState([3, 5, 8, 6, 4, 7, 5, 3, 6, 8, 5, 4]);
+  const [activeQuestions, setActiveQuestions] = useState<string[]>(defaultQuestions);
+  // responses is the single source of truth for all typed answers
+  const [responses, setResponses] = useState<string[]>(Array(defaultQuestions.length).fill(""));
   const [elapsedTime, setElapsedTime] = useState(0);
-  const [mode, setMode] = useState<"verbal" | "code">("verbal");
-
-  const [activeQuestions, setActiveQuestions] = useState<string[]>(questions);
-  const [targetRole, setTargetRole] = useState("Software Engineer Intern");
+  const [targetRole, setTargetRole] = useState("Software Engineer");
   const [isLoading, setIsLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showExitDialog, setShowExitDialog] = useState(false);
 
-  // Fetch custom questions from database session if sessionId is provided
+  // Track whether we have already initialized responses for the loaded session.
+  // This prevents the DB-question load from wiping any answers the user typed
+  // during the brief loading window (when defaultQuestions were showing).
+  const sessionLoadedRef = useRef(false);
+
+  // Always keep a ref in sync with the responses state so that async callbacks
+  // (like handleNext) always read the LATEST values and never close over stale state.
+  const responsesRef = useRef<string[]>(responses);
+  useEffect(() => {
+    responsesRef.current = responses;
+  }, [responses]);
+
+  // Fetch custom questions from database session if sessionId is provided.
+  // Resets currentQuestion and responses atomically so the two are never out of sync.
   useEffect(() => {
     if (!sessionId) return;
 
@@ -53,30 +50,29 @@ export function InterviewPage({ onNavigate, sessionId }: InterviewPageProps) {
       setIsLoading(true);
       const result = await getInterviewSessionAction(sessionId);
       if (result.success && result.questions && result.questions.length > 0) {
+        // Reset the question index AND responses together so they always match.
+        setCurrentQuestion(0);
         setActiveQuestions(result.questions);
+        // Initialize a fresh answers array sized to match the loaded questions.
+        const freshResponses = Array(result.questions.length).fill("");
+        setResponses(freshResponses);
+        responsesRef.current = freshResponses;
+        sessionLoadedRef.current = true;
+
         if (result.position) {
           setTargetRole(result.position);
         }
       } else {
         console.error("Failed to load custom AI questions:", result.error);
+        // Fall back to defaultQuestions already in state — no reset needed.
+        sessionLoadedRef.current = true;
       }
       setIsLoading(false);
     };
 
     fetchSessionData();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
-
-  // Simulate audio visualizer
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setAudioLevel(
-        Array(12)
-          .fill(0)
-          .map(() => Math.floor(Math.random() * 10) + 1)
-      );
-    }, 150);
-    return () => clearInterval(interval);
-  }, []);
 
   // Timer
   useEffect(() => {
@@ -92,224 +88,208 @@ export function InterviewPage({ onNavigate, sessionId }: InterviewPageProps) {
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
-  const handleSubmit = () => {
+  const currentAnswer = responses[currentQuestion] ?? "";
+
+  const handleAnswerChange = (value: string) => {
+    setResponses((prev) => {
+      const updated = [...prev];
+      updated[currentQuestion] = value;
+      return updated;
+    });
+  };
+
+  const handleNext = useCallback(async () => {
+    // Read the latest responses from the ref — never the potentially stale closure value.
+    const latestResponses = responsesRef.current;
+
     if (currentQuestion < activeQuestions.length - 1) {
+      // Advance to the next question.
       setCurrentQuestion((prev) => prev + 1);
-      setResponse("");
     } else {
+      // ── Last question submitted ──────────────────────────────────────────────
+      if (sessionId) {
+        setIsSubmitting(true);
+        try {
+          // Ensure the answers array is correctly sized for the session questions.
+          // Pad with empty strings if somehow responses is shorter than expected.
+          const answersToSave = Array(activeQuestions.length)
+            .fill("")
+            .map((_, i) => latestResponses[i] ?? "");
+
+          const result = await saveInterviewAnswersAction(sessionId, answersToSave);
+          if (!result.success) {
+            console.error("Failed to save responses:", result.error);
+            alert(`Failed to save responses: ${result.error}`);
+            setIsSubmitting(false);
+            return; // Don't navigate away if save failed
+          }
+        } catch (err) {
+          console.error("Unexpected error saving responses:", err);
+          setIsSubmitting(false);
+          return;
+        }
+        setIsSubmitting(false);
+      }
       onNavigate("feedback");
+    }
+  // activeQuestions and sessionId are stable for the life of a session
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentQuestion, activeQuestions, sessionId, onNavigate]);
+
+  const handleBack = () => {
+    if (currentQuestion > 0) {
+      setCurrentQuestion((prev) => prev - 1);
     }
   };
 
+  const progressPercent = activeQuestions.length > 0
+    ? Math.round(((currentQuestion + 1) / activeQuestions.length) * 100)
+    : 0;
+
   return (
-    <div className="min-h-screen bg-zinc-950 flex flex-col">
+    <div className="min-h-screen bg-zinc-950 flex flex-col relative overflow-hidden">
+      {/* Background Decorative Glow */}
+      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-emerald-500/5 blur-[120px] rounded-full pointer-events-none" />
+      <div className="absolute bottom-10 right-10 w-[300px] h-[300px] bg-teal-500/5 blur-[100px] rounded-full pointer-events-none" />
+
       {/* Header */}
-      <header className="bg-zinc-950/80 backdrop-blur-xl border-b border-white/[0.08] px-4 py-3">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
+      <header className="bg-zinc-950/80 backdrop-blur-xl border-b border-white/[0.08] px-6 py-4 sticky top-0 z-40">
+        <div className="max-w-4xl mx-auto flex items-center justify-between">
           <button
-            onClick={() => onNavigate("dashboard")}
-            className="flex items-center gap-2 text-zinc-500 hover:text-white transition-colors"
+            onClick={() => setShowExitDialog(true)}
+            className="flex items-center gap-2 text-zinc-500 hover:text-white transition-colors cursor-pointer group"
           >
-            <ChevronLeft className="w-5 h-5" />
-            <span className="text-sm hidden sm:inline">Exit Interview</span>
+            <ChevronLeft className="w-5 h-5 group-hover:-translate-x-0.5 transition-transform" />
+            <span className="text-sm font-medium">Exit Interview</span>
           </button>
 
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-red-500/10 border border-red-500/20 rounded-full">
-              <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-              <span className="text-sm text-red-400 font-medium">Live Session</span>
-            </div>
+            <span className="text-zinc-500 text-xs uppercase tracking-wider font-mono">Role:</span>
+            <span className="text-emerald-400 text-sm font-medium font-mono">{targetRole}</span>
           </div>
 
-          <div className="flex items-center gap-2 text-zinc-400">
-            <Clock className="w-4 h-4" />
-            <span className="text-sm font-mono">{formatTime(elapsedTime)}</span>
+          <div className="flex items-center gap-2 text-zinc-400 bg-white/[0.03] border border-white/[0.05] rounded-full px-3 py-1">
+            <Clock className="w-4 h-4 text-emerald-400" />
+            <span className="text-sm font-mono font-medium">{formatTime(elapsedTime)}</span>
           </div>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col lg:flex-row gap-4 p-4 max-w-7xl mx-auto w-full">
-        {/* Left Panel - AI Interviewer */}
-        <div className="flex-1 flex flex-col gap-4">
-          {/* AI Avatar Section */}
-          <div className="flex-1 bg-white/[0.02] backdrop-blur-sm border border-white/[0.08] rounded-2xl overflow-hidden flex flex-col">
-            {/* Avatar */}
-            <div className="flex-1 flex items-center justify-center p-8 relative">
-              {isLoading ? (
-                <div className="flex flex-col items-center justify-center gap-3">
-                  <Loader2 className="w-12 h-12 text-emerald-400 animate-spin" />
-                  <p className="text-sm font-mono text-zinc-400">Loading custom AI questions...</p>
-                </div>
-              ) : (
-                <>
-                  <div className="absolute inset-0 bg-gradient-to-b from-emerald-500/5 to-transparent" />
-                  <div className="relative">
-                    <div className="w-32 h-32 sm:w-40 sm:h-40 rounded-full bg-gradient-to-br from-emerald-500/20 to-indigo-500/20 border border-white/[0.08] flex items-center justify-center">
-                      <Bot className="w-16 h-16 sm:w-20 sm:h-20 text-emerald-400" />
-                    </div>
-                    {/* Audio Visualizer Ring */}
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="flex items-end gap-1 h-8 sm:h-10">
-                        {audioLevel.map((level, index) => (
-                          <div
-                            key={index}
-                            className="w-1 bg-emerald-400/60 rounded-full transition-all duration-150"
-                            style={{ height: `${level * 8}%` }}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Question Display */}
-            <div className="p-4 sm:p-6 border-t border-white/[0.08]">
-              <div className="flex items-center gap-2 mb-3">
-                <Volume2 className="w-4 h-4 text-emerald-400" />
-                <span className="text-xs text-zinc-500 uppercase tracking-wider">
-                  Question {currentQuestion + 1} of {activeQuestions.length}
-                </span>
-              </div>
-              <div className="bg-zinc-900/80 border border-white/[0.05] rounded-xl p-4 font-mono">
-                <p className="text-white text-sm sm:text-base leading-relaxed" dangerouslySetInnerHTML={{ __html: activeQuestions[currentQuestion] }} />
+      <main className="flex-1 flex items-center justify-center p-4 sm:p-6 z-10">
+        <div className="max-w-2xl w-full">
+          {isLoading ? (
+            <div className="bg-white/[0.02] backdrop-blur-md border border-white/[0.08] rounded-2xl p-12 flex flex-col items-center justify-center gap-4 text-center">
+              <Loader2 className="w-12 h-12 text-emerald-400 animate-spin" />
+              <div className="space-y-1">
+                <p className="text-white font-medium text-lg">Initializing Interview Session</p>
+                <p className="text-zinc-500 text-sm font-mono">Loading custom AI questions tailored to your profile...</p>
               </div>
             </div>
-          </div>
-        </div>
-
-        {/* Right Panel - User Response */}
-        <div className="flex-1 flex flex-col gap-4">
-          {/* Camera Preview */}
-          <div className="relative aspect-video bg-zinc-900 rounded-xl overflow-hidden border border-white/[0.08]">
-            <div className="absolute inset-0 flex items-center justify-center">
-              {isVideoOn ? (
-                <div className="text-center">
-                  <div className="w-20 h-20 rounded-full bg-gradient-to-br from-indigo-500 to-emerald-500 mx-auto mb-3 flex items-center justify-center">
-                    <span className="text-2xl font-bold text-white">JD</span>
-                  </div>
-                  <p className="text-xs text-zinc-500">Camera Preview</p>
+          ) : (
+            <div className="bg-white/[0.02] backdrop-blur-md border border-white/[0.08] rounded-3xl overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.5)]">
+              {/* Progress & Info Bar */}
+              <div className="px-6 sm:px-8 pt-6 sm:pt-8 pb-4">
+                <div className="flex justify-between items-center text-xs font-mono text-zinc-500 mb-2">
+                  <span>QUESTION {currentQuestion + 1} OF {activeQuestions.length}</span>
+                  <span className="text-emerald-400 font-semibold">{progressPercent}% COMPLETE</span>
                 </div>
-              ) : (
-                <div className="text-center">
-                  <VideoOff className="w-12 h-12 text-zinc-600 mx-auto mb-2" />
-                  <p className="text-xs text-zinc-500">Camera Off</p>
-                </div>
-              )}
-            </div>
-            {/* Live Indicator */}
-            <div className="absolute top-3 left-3 flex items-center gap-2 px-2 py-1 bg-black/40 backdrop-blur-sm rounded-full">
-              <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-              <span className="text-xs text-white">Live</span>
-            </div>
-          </div>
+                <Progress value={progressPercent} className="h-1.5 bg-zinc-800" />
+              </div>
 
-          {/* Response Area */}
-          <div className="flex-1 bg-white/[0.02] backdrop-blur-sm border border-white/[0.08] rounded-xl overflow-hidden flex flex-col">
-            {/* Mode Tabs */}
-            <div className="flex border-b border-white/[0.08]">
-              <button
-                onClick={() => setMode("verbal")}
-                className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium transition-colors ${
-                  mode === "verbal"
-                    ? "text-emerald-400 border-b-2 border-emerald-400 bg-emerald-500/5"
-                    : "text-zinc-500 hover:text-white"
-                }`}
-              >
-                <MessageSquare className="w-4 h-4" />
-                Verbal Response
-              </button>
-              <button
-                onClick={() => setMode("code")}
-                className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 text-sm font-medium transition-colors ${
-                  mode === "code"
-                    ? "text-emerald-400 border-b-2 border-emerald-400 bg-emerald-500/5"
-                    : "text-zinc-500 hover:text-white"
-                }`}
-              >
-                <Code className="w-4 h-4" />
-                Code Editor
-              </button>
-            </div>
-
-            {/* Editor */}
-            <div className="flex-1 p-4">
-              {mode === "verbal" ? (
-                <textarea
-                  value={response}
-                  onChange={(e) => setResponse(e.target.value)}
-                  placeholder="Type your response here or speak directly..."
-                  className="w-full h-full min-h-[150px] bg-transparent text-white placeholder-zinc-600 resize-none focus:outline-none text-sm leading-relaxed"
-                />
-              ) : (
-                <div className="h-full min-h-[150px] font-mono text-sm">
-                  <div className="flex items-center gap-2 text-xs text-zinc-600 mb-2">
-                    <span className="px-2 py-0.5 bg-zinc-800 rounded">JavaScript</span>
-                    <span>index.js</span>
+              {/* Question Text */}
+              <div className="px-6 sm:px-8 py-6 border-b border-white/[0.05]">
+                <div className="flex items-start gap-3">
+                  <div className="w-6 h-6 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 text-xs font-bold font-mono mt-0.5 shrink-0">
+                    Q
                   </div>
-                  <textarea
-                    value={response}
-                    onChange={(e) => setResponse(e.target.value)}
-                    placeholder="// Write your code here..."
-                    className="w-full h-[calc(100%-2rem)] bg-zinc-900/50 text-emerald-400 placeholder-zinc-700 resize-none focus:outline-none p-3 rounded-lg border border-white/[0.05]"
+                  <h2
+                    className="text-white text-base sm:text-lg font-medium leading-relaxed font-sans"
+                    dangerouslySetInnerHTML={{ __html: activeQuestions[currentQuestion] || "" }}
                   />
                 </div>
-              )}
+              </div>
+
+              {/* Answer Input Area */}
+              <div className="p-6 sm:p-8 space-y-4">
+                <div className="flex justify-between items-center">
+                  <label className="text-xs font-mono text-zinc-400 uppercase tracking-wider">Your Written Answer</label>
+                  <span className="text-xs font-mono text-zinc-600">{currentAnswer.length} characters</span>
+                </div>
+                <textarea
+                  value={currentAnswer}
+                  onChange={(e) => handleAnswerChange(e.target.value)}
+                  placeholder="Type your response in detail here. You can outline logic, explain trade-offs, or share relevant experience..."
+                  className="w-full min-h-[220px] bg-zinc-900/40 border border-white/[0.08] focus:border-emerald-500/50 rounded-xl px-4 py-3.5 text-white placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-emerald-500/20 transition-all font-mono text-sm leading-relaxed resize-none"
+                  disabled={isSubmitting}
+                />
+              </div>
+
+              {/* Bottom Actions Footer */}
+              <div className="px-6 sm:px-8 py-4 sm:py-5 bg-white/[0.01] border-t border-white/[0.05] flex justify-between items-center gap-4">
+                {/* Back Button */}
+                <button
+                  onClick={handleBack}
+                  disabled={currentQuestion === 0 || isSubmitting}
+                  className="px-4 py-2.5 text-zinc-500 hover:text-white disabled:text-zinc-800 font-medium text-sm transition-all rounded-lg hover:bg-white/[0.03] disabled:hover:bg-transparent disabled:cursor-not-allowed cursor-pointer"
+                >
+                  Previous
+                </button>
+
+                {/* Next / Submit Button */}
+                <button
+                  onClick={handleNext}
+                  disabled={isSubmitting}
+                  className="px-6 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-zinc-950 font-semibold rounded-xl text-sm transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer shadow-[0_0_20px_rgba(16,185,129,0.15)] hover:shadow-[0_0_25px_rgba(16,185,129,0.3)]"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Saving Response...</span>
+                    </>
+                  ) : currentQuestion === activeQuestions.length - 1 ? (
+                    <>
+                      <span>Finish &amp; Submit</span>
+                      <CheckCircle className="w-4 h-4" />
+                    </>
+                  ) : (
+                    <>
+                      <span>Next Question</span>
+                      <Send className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </main>
 
-      {/* Control Bar */}
-      <div className="p-4">
-        <div className="max-w-2xl mx-auto">
-          <div className="bg-white/[0.03] backdrop-blur-xl border border-white/[0.08] rounded-2xl px-4 sm:px-6 py-4 flex items-center justify-between gap-2 sm:gap-4">
-            {/* Left Controls */}
-            <div className="flex items-center gap-2">
+      {/* Exit Confirmation Dialog overlay */}
+      {showExitDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-zinc-900 border border-white/[0.08] rounded-2xl p-6 max-w-sm w-full mx-4 shadow-2xl space-y-4">
+            <h3 className="text-lg font-semibold text-white">Exit Interview?</h3>
+            <p className="text-zinc-400 text-sm leading-relaxed">
+              Are you sure you want to leave? Your answers in this session will not be saved and the interview will be cancelled.
+            </p>
+            <div className="flex justify-end gap-3 pt-2">
               <button
-                onClick={() => setIsMuted(!isMuted)}
-                className={`p-3 rounded-xl transition-all ${
-                  isMuted
-                    ? "bg-red-500/20 text-red-400 hover:bg-red-500/30"
-                    : "bg-white/[0.05] text-white hover:bg-white/[0.1]"
-                }`}
+                onClick={() => setShowExitDialog(false)}
+                className="px-4 py-2 text-sm text-zinc-400 hover:text-white transition-colors cursor-pointer"
               >
-                {isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+                Cancel
               </button>
               <button
-                onClick={() => setIsVideoOn(!isVideoOn)}
-                className={`p-3 rounded-xl transition-all ${
-                  !isVideoOn
-                    ? "bg-red-500/20 text-red-400 hover:bg-red-500/30"
-                    : "bg-white/[0.05] text-white hover:bg-white/[0.1]"
-                }`}
+                onClick={() => onNavigate("dashboard")}
+                className="px-4 py-2 text-sm bg-red-500 hover:bg-red-400 text-white rounded-lg transition-colors font-semibold cursor-pointer"
               >
-                {isVideoOn ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
+                Exit Session
               </button>
             </div>
-
-            {/* Submit Button */}
-            <button
-              onClick={handleSubmit}
-              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 sm:px-8 py-3 bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold rounded-xl transition-all hover:scale-105 shadow-[0_0_30px_rgba(16,185,129,0.25)]"
-            >
-              <Send className="w-4 h-4" />
-              <span className="hidden sm:inline">Submit Response</span>
-              <span className="sm:hidden">Submit</span>
-            </button>
-
-            {/* End Session */}
-            <button
-              onClick={() => onNavigate("feedback")}
-              className="p-3 bg-red-500/20 text-red-400 hover:bg-red-500/30 rounded-xl transition-all"
-            >
-              <PhoneOff className="w-5 h-5" />
-            </button>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

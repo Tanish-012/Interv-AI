@@ -59,3 +59,24 @@ export const db = new Proxy({} as PrismaClient, {
     return value;
   },
 });
+
+export async function withDbRetry<T>(fn: () => Promise<T>, retries = 3, delay = 1000): Promise<T> {
+  try {
+    return await fn();
+  } catch (error: any) {
+    const errorMsg = error?.message || "";
+    const isConnectionError = 
+      errorMsg.includes("Can't reach database server") ||
+      errorMsg.includes("Connection terminated") ||
+      errorMsg.includes("timeout") ||
+      errorMsg.includes("disconnected") ||
+      errorMsg.includes("database");
+      
+    if (isConnectionError && retries > 0) {
+      console.warn(`[DB Retry] Connection error detected. Retrying in ${delay}ms... (${retries} left). Error: ${errorMsg}`);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      return withDbRetry(fn, retries - 1, delay * 1.5);
+    }
+    throw error;
+  }
+}

@@ -20,11 +20,28 @@ model UserResume {
 }
 
 model InterviewSession {
-  id         String   @id @default(cuid())
-  userId     String   // Maps to your Clerk user ID
-  position   String   // e.g., "Software Engineer Intern"
-  questions  Json     // Stores the 10 questions as a structured JSON array
-  createdAt  DateTime @default(now())
+  id         String     @id @default(cuid())
+  userId     String     // Maps to your Clerk user ID
+  position   String     // e.g., "Software Engineer Intern"
+  questions  Json       // Stores the 10 questions as a structured JSON array
+  answers    Json?      // Stores the responses as a JSON array of strings
+  feedbacks  Feedback[]
+  createdAt  DateTime   @default(now())
 
   @@index([userId])
+}
+
+model Feedback {
+  id           String           @id @default(uuid())
+  sessionId    String
+  session      InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  question     String           @db.Text
+  answer       String           @db.Text
+  score        Int              // Score out of 10
+  strengths    Json             // Array of strings (e.g. ["Clear introduction"])
+  weaknesses   Json             // Array of strings (e.g. ["Lacks technical achievements"])
+  betterAnswer String           @db.Text
+  createdAt    DateTime         @default(now())
+
+  @@index([sessionId])
 }
